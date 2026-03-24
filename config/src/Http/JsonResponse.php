@@ -10,7 +10,7 @@ namespace Sasd\Health\Http;
  * Die Klasse hält Statuscode, Nutzdaten und Header zusammen und sorgt
  * für eine einheitliche Ausgabe im API-Format.
  */
-final class JsonResponse
+final class JsonResponse implements ResponseInterface
 {
     /**
      * HTTP-Statuscode der Antwort.
