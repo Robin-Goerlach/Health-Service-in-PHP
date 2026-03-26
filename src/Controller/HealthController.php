@@ -10,37 +10,35 @@ use Sasd\Health\Service\HealthService;
 use Sasd\Health\Service\PhpInfoService;
 
 /**
- * Controller für die Endpunkte dieses kleinen Services.
- *
- * Aufgabe des Controllers:
- * - Daten von Services holen
- * - sie in passende HTTP-Antworten umwandeln
- *
- * Der Controller kennt dabei zwei fachliche Ausgaben:
- * - Health-JSON
- * - phpinfo()-HTML
+ * Controller für die öffentlich erreichbaren Endpunkte des Health-Services.
  */
 final class HealthController
 {
     /**
-     * Fachlogik für den Health-Endpunkt.
+     * Fachservice für Datum, Uhrzeit und Zeitzone.
+     *
+     * @var HealthService
      */
     private HealthService $healthService;
 
     /**
-     * Fachlogik für die phpinfo()-Ausgabe.
+     * Fachservice für phpinfo().
+     *
+     * @var PhpInfoService
      */
     private PhpInfoService $phpInfoService;
 
     /**
-     * Logischer Service-Name für die JSON-Antwort.
+     * Anzeigename des Dienstes.
+     *
+     * @var string
      */
     private string $serviceName;
 
     /**
-     * @param HealthService $healthService Service für Zeit- und Datumsdaten.
-     * @param PhpInfoService $phpInfoService Service für die phpinfo()-Ausgabe.
-     * @param string $serviceName Anzeigename des Services.
+     * @param HealthService $healthService Fachservice für Zeitdaten.
+     * @param PhpInfoService $phpInfoService Fachservice für phpinfo().
+     * @param string $serviceName Anzeigename des Dienstes.
      */
     public function __construct(
         HealthService $healthService,
@@ -54,6 +52,8 @@ final class HealthController
 
     /**
      * Liefert die Health-Informationen als JSON-Antwort zurück.
+     *
+     * @return JsonResponse
      */
     public function showHealth(): JsonResponse
     {
@@ -69,8 +69,29 @@ final class HealthController
                     'path' => '/',
                     'description' => 'Liefert Datum, Uhrzeit und Zeitzone als JSON.',
                 ],
+                'time' => [
+                    'path' => '/time',
+                    'description' => 'Liefert Datum, Uhrzeit und Zeitzone als reine JSON-Nutzdaten.',
+                ],
                 'phpinfo' => $phpInfoMeta,
             ],
+        ]);
+    }
+
+    /**
+     * Liefert Datum, Uhrzeit und Zeitzone als schlanke JSON-Antwort zurück.
+     *
+     * Dieser Endpunkt ist nützlich, wenn ein Client nur die eigentlichen
+     * Zeitdaten benötigt und keine zusätzliche Endpunktbeschreibung.
+     *
+     * @return JsonResponse
+     */
+    public function showTime(): JsonResponse
+    {
+        return JsonResponse::ok([
+            'status' => 'ok',
+            'service' => $this->serviceName,
+            'data' => $this->healthService->getCurrentDateTimePayload(),
         ]);
     }
 
@@ -79,6 +100,8 @@ final class HealthController
      *
      * Falls der Endpunkt per Konfiguration deaktiviert wurde,
      * liefert der Service stattdessen eine 403-Fehlerantwort als HTML.
+     *
+     * @return HtmlResponse
      */
     public function showPhpInfo(): HtmlResponse
     {

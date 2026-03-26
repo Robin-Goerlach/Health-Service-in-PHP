@@ -1,19 +1,17 @@
-Options -Indexes -MultiViews
+Options -Indexes
 DirectoryIndex index.php
-
-ErrorDocument 404 /health2/error_404_sasd.html
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
-    # Interne Projektverzeichnisse dürfen nicht direkt erreichbar sein.
+    # Interne Verzeichnisse sollen nicht direkt aufrufbar sein.
     RewriteRule ^(config|src)(/|$) - [F,L]
 
-    # Reale Dateien und Verzeichnisse direkt ausliefern.
+    # Reale Dateien und Verzeichnisse werden direkt bedient.
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
-    # Alles andere an den Front Controller weiterreichen.
+    # Alles andere wird an index.php weitergereicht.
     RewriteRule ^ index.php [QSA,L]
 </IfModule>

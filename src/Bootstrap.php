@@ -15,23 +15,19 @@ use Sasd\Health\Service\PhpInfoService;
 use Throwable;
 
 /**
- * Startet die Anwendung, lädt die Konfiguration und steuert die Anfrageverarbeitung.
- *
- * Für dieses kleine Projekt übernimmt die Klasse bewusst mehrere klar begrenzte Aufgaben:
- * 1. Konfiguration laden
- * 2. projektinternen Autoloader registrieren
- * 3. Runtime-Konfiguration anwenden
- * 4. HTTP-Anfrage an den passenden Controller-Zweig weiterleiten
+ * Bootstrapt die Anwendung und verarbeitet eingehende HTTP-Anfragen.
  */
 final class Bootstrap
 {
     /**
-     * Physischer Projektpfad des Services.
+     * Absoluter Pfad des Projektwurzelverzeichnisses.
+     *
+     * @var string
      */
     private string $projectRoot;
 
     /**
-     * Geladene Anwendungskonfiguration.
+     * Geladene Projektkonfiguration.
      *
      * @var array<string, mixed>
      */
@@ -45,7 +41,6 @@ final class Bootstrap
     public function __construct(string $projectRoot)
     {
         $this->projectRoot = rtrim($projectRoot, DIRECTORY_SEPARATOR);
-
         $this->registerAutoloader();
         $this->config = $this->loadConfig();
         $this->applyRuntimeConfiguration();
@@ -56,19 +51,28 @@ final class Bootstrap
      *
      * Je nach Route wird entweder JSON oder HTML erzeugt:
      * - Basisroute des Ordners -> JSON-Health-Antwort
+     * - /time -> JSON mit Datum, Uhrzeit und Zeitzone
      * - /phpinfo -> HTML-Ausgabe von phpinfo()
      *
-     * @param array<string, mixed> $server Server-Parameter aus $_SERVER.
+     * @param array $server Server-Parameter aus $_SERVER.
+     *
+     * @return ResponseInterface
      */
     public function handle(array $server): ResponseInterface
     {
         try {
             $request = Request::fromServer($server);
             $allowedMethods = ['GET', 'HEAD', 'OPTIONS'];
+
+            $timeRoute = (string) ($this->config['app']['time_route'] ?? 'time');
             $phpInfoRoute = (string) ($this->config['app']['phpinfo_route'] ?? 'phpinfo');
 
             if ($request->matchesBaseRoute()) {
                 return $this->handleBaseRoute($request, $allowedMethods);
+            }
+
+            if ($request->matchesRelativeRoute($timeRoute)) {
+                return $this->handleTimeRoute($request, $allowedMethods);
             }
 
             if ($request->matchesRelativeRoute($phpInfoRoute)) {
@@ -95,6 +99,8 @@ final class Bootstrap
      *
      * @param Request $request Vereinfachte HTTP-Anfrage.
      * @param array<int, string> $allowedMethods Erlaubte HTTP-Methoden.
+     *
+     * @return ResponseInterface
      */
     private function handleBaseRoute(Request $request, array $allowedMethods): ResponseInterface
     {
@@ -115,19 +121,41 @@ final class Bootstrap
             );
         }
 
-        $healthService = new HealthService((string) $this->config['app']['timezone']);
-        $phpInfoService = new PhpInfoService(
-            (bool) ($this->config['app']['phpinfo_enabled'] ?? false),
-            (string) ($this->config['app']['phpinfo_route'] ?? 'phpinfo')
-        );
-
-        $healthController = new HealthController(
-            $healthService,
-            $phpInfoService,
-            (string) $this->config['app']['service_name']
-        );
+        $healthController = $this->buildHealthController();
 
         return $healthController->showHealth();
+    }
+
+    /**
+     * Verarbeitet die Zusatzroute /time.
+     *
+     * @param Request $request Vereinfachte HTTP-Anfrage.
+     * @param array<int, string> $allowedMethods Erlaubte HTTP-Methoden.
+     *
+     * @return ResponseInterface
+     */
+    private function handleTimeRoute(Request $request, array $allowedMethods): ResponseInterface
+    {
+        if ($request->getMethod() === 'OPTIONS') {
+            return JsonResponse::noContent([
+                'Allow' => implode(', ', $allowedMethods),
+            ]);
+        }
+
+        if (!$request->isMethodAllowed(['GET', 'HEAD'])) {
+            return JsonResponse::error(
+                405,
+                'Method Not Allowed',
+                'Für diese Ressource sind nur GET und HEAD erlaubt.',
+                [
+                    'Allow' => implode(', ', $allowedMethods),
+                ]
+            );
+        }
+
+        $healthController = $this->buildHealthController();
+
+        return $healthController->showTime();
     }
 
     /**
@@ -135,6 +163,8 @@ final class Bootstrap
      *
      * @param Request $request Vereinfachte HTTP-Anfrage.
      * @param array<int, string> $allowedMethods Erlaubte HTTP-Methoden.
+     *
+     * @return ResponseInterface
      */
     private function handlePhpInfoRoute(Request $request, array $allowedMethods): ResponseInterface
     {
@@ -155,19 +185,29 @@ final class Bootstrap
             );
         }
 
+        $healthController = $this->buildHealthController();
+
+        return $healthController->showPhpInfo();
+    }
+
+    /**
+     * Baut den Controller mit seinen benötigten Services auf.
+     *
+     * @return HealthController
+     */
+    private function buildHealthController(): HealthController
+    {
         $healthService = new HealthService((string) $this->config['app']['timezone']);
         $phpInfoService = new PhpInfoService(
             (bool) ($this->config['app']['phpinfo_enabled'] ?? false),
             (string) ($this->config['app']['phpinfo_route'] ?? 'phpinfo')
         );
 
-        $healthController = new HealthController(
+        return new HealthController(
             $healthService,
             $phpInfoService,
             (string) $this->config['app']['service_name']
         );
-
-        return $healthController->showPhpInfo();
     }
 
     /**
@@ -204,7 +244,10 @@ final class Bootstrap
         $timezone = (string) ($this->config['app']['timezone'] ?? 'UTC');
 
         if (!in_array($timezone, DateTimeZone::listIdentifiers(), true)) {
-            throw new InvalidArgumentException(sprintf('Die konfigurierte Zeitzone "%s" ist ungültig.', $timezone));
+            throw new InvalidArgumentException(sprintf(
+                'Die konfigurierte Zeitzone "%s" ist ungültig.',
+                $timezone
+            ));
         }
 
         // Dadurch arbeiten alle Datums- und Zeitfunktionen der Anwendung konsistent.
@@ -216,6 +259,8 @@ final class Bootstrap
      *
      * Es wird bewusst kein Composer vorausgesetzt, damit die Anwendung
      * auf einfachem Webhosting möglichst leicht deploybar bleibt.
+     *
+     * @return void
      */
     private function registerAutoloader(): void
     {
