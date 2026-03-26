@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace Sasd\Health;
 
+use DateTimeZone;
 use InvalidArgumentException;
 use Sasd\Health\Controller\HealthController;
 use Sasd\Health\Http\JsonResponse;
 use Sasd\Health\Http\Request;
+use Sasd\Health\Http\ResponseInterface;
 use Sasd\Health\Service\HealthService;
+use Sasd\Health\Service\PhpInfoService;
 use Throwable;
 
 /**
  * Startet die Anwendung, lädt die Konfiguration und steuert die Anfrageverarbeitung.
  *
- * Für dieses kleine Projekt übernimmt die Klasse bewusst drei klar begrenzte Aufgaben:
+ * Für dieses kleine Projekt übernimmt die Klasse bewusst mehrere klar begrenzte Aufgaben:
  * 1. Konfiguration laden
- * 2. einfachen PSR-4-artigen Autoloader registrieren
- * 3. Anfrage an Controller und Service weiterreichen
+ * 2. projektinternen Autoloader registrieren
+ * 3. Runtime-Konfiguration anwenden
+ * 4. HTTP-Anfrage an den passenden Controller-Zweig weiterleiten
  */
 final class Bootstrap
 {
@@ -48,45 +52,34 @@ final class Bootstrap
     }
 
     /**
-     * Verarbeitet die eingehende HTTP-Anfrage und liefert eine JSON-Antwort zurück.
+     * Verarbeitet die eingehende HTTP-Anfrage und liefert eine HTTP-Antwort zurück.
+     *
+     * Je nach Route wird entweder JSON oder HTML erzeugt:
+     * - Basisroute des Ordners -> JSON-Health-Antwort
+     * - /phpinfo -> HTML-Ausgabe von phpinfo()
      *
      * @param array<string, mixed> $server Server-Parameter aus $_SERVER.
      */
-    public function handle(array $server): JsonResponse
+    public function handle(array $server): ResponseInterface
     {
         try {
             $request = Request::fromServer($server);
             $allowedMethods = ['GET', 'HEAD', 'OPTIONS'];
+            $phpInfoRoute = (string) ($this->config['app']['phpinfo_route'] ?? 'phpinfo');
 
-            if (!$request->matchesBaseRoute()) {
-                return JsonResponse::error(
-                    404,
-                    'Not Found',
-                    'Die angeforderte Ressource wurde nicht gefunden.'
-                );
+            if ($request->matchesBaseRoute()) {
+                return $this->handleBaseRoute($request, $allowedMethods);
             }
 
-            if ($request->getMethod() === 'OPTIONS') {
-                return JsonResponse::noContent([
-                    'Allow' => implode(', ', $allowedMethods),
-                ]);
+            if ($request->matchesRelativeRoute($phpInfoRoute)) {
+                return $this->handlePhpInfoRoute($request, $allowedMethods);
             }
 
-            if (!$request->isMethodAllowed(['GET', 'HEAD'])) {
-                return JsonResponse::error(
-                    405,
-                    'Method Not Allowed',
-                    'Für diese Ressource sind nur GET und HEAD erlaubt.',
-                    [
-                        'Allow' => implode(', ', $allowedMethods),
-                    ]
-                );
-            }
-
-            $healthService = new HealthService((string) $this->config['app']['timezone']);
-            $healthController = new HealthController($healthService, (string) $this->config['app']['service_name']);
-
-            return $healthController->show();
+            return JsonResponse::error(
+                404,
+                'Not Found',
+                'Die angeforderte Ressource wurde nicht gefunden.'
+            );
         } catch (Throwable $exception) {
             // Anwendungsfehler werden hier in eine stabile API-Antwort übersetzt.
             return JsonResponse::error(
@@ -95,6 +88,86 @@ final class Bootstrap
                 'Die Anfrage konnte serverseitig nicht verarbeitet werden.'
             );
         }
+    }
+
+    /**
+     * Verarbeitet die Basisroute des Services, also z. B. /health oder /health/.
+     *
+     * @param Request $request Vereinfachte HTTP-Anfrage.
+     * @param array<int, string> $allowedMethods Erlaubte HTTP-Methoden.
+     */
+    private function handleBaseRoute(Request $request, array $allowedMethods): ResponseInterface
+    {
+        if ($request->getMethod() === 'OPTIONS') {
+            return JsonResponse::noContent([
+                'Allow' => implode(', ', $allowedMethods),
+            ]);
+        }
+
+        if (!$request->isMethodAllowed(['GET', 'HEAD'])) {
+            return JsonResponse::error(
+                405,
+                'Method Not Allowed',
+                'Für diese Ressource sind nur GET und HEAD erlaubt.',
+                [
+                    'Allow' => implode(', ', $allowedMethods),
+                ]
+            );
+        }
+
+        $healthService = new HealthService((string) $this->config['app']['timezone']);
+        $phpInfoService = new PhpInfoService(
+            (bool) ($this->config['app']['phpinfo_enabled'] ?? false),
+            (string) ($this->config['app']['phpinfo_route'] ?? 'phpinfo')
+        );
+
+        $healthController = new HealthController(
+            $healthService,
+            $phpInfoService,
+            (string) $this->config['app']['service_name']
+        );
+
+        return $healthController->showHealth();
+    }
+
+    /**
+     * Verarbeitet die Zusatzroute für phpinfo().
+     *
+     * @param Request $request Vereinfachte HTTP-Anfrage.
+     * @param array<int, string> $allowedMethods Erlaubte HTTP-Methoden.
+     */
+    private function handlePhpInfoRoute(Request $request, array $allowedMethods): ResponseInterface
+    {
+        if ($request->getMethod() === 'OPTIONS') {
+            return JsonResponse::noContent([
+                'Allow' => implode(', ', $allowedMethods),
+            ]);
+        }
+
+        if (!$request->isMethodAllowed(['GET', 'HEAD'])) {
+            return JsonResponse::error(
+                405,
+                'Method Not Allowed',
+                'Für diese Ressource sind nur GET und HEAD erlaubt.',
+                [
+                    'Allow' => implode(', ', $allowedMethods),
+                ]
+            );
+        }
+
+        $healthService = new HealthService((string) $this->config['app']['timezone']);
+        $phpInfoService = new PhpInfoService(
+            (bool) ($this->config['app']['phpinfo_enabled'] ?? false),
+            (string) ($this->config['app']['phpinfo_route'] ?? 'phpinfo')
+        );
+
+        $healthController = new HealthController(
+            $healthService,
+            $phpInfoService,
+            (string) $this->config['app']['service_name']
+        );
+
+        return $healthController->showPhpInfo();
     }
 
     /**
@@ -130,7 +203,7 @@ final class Bootstrap
     {
         $timezone = (string) ($this->config['app']['timezone'] ?? 'UTC');
 
-        if (!in_array($timezone, \DateTimeZone::listIdentifiers(), true)) {
+        if (!in_array($timezone, DateTimeZone::listIdentifiers(), true)) {
             throw new InvalidArgumentException(sprintf('Die konfigurierte Zeitzone "%s" ist ungültig.', $timezone));
         }
 

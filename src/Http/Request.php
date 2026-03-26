@@ -98,18 +98,56 @@ final class Request
      */
     public function matchesBaseRoute(): bool
     {
-        $allowedPaths = [];
+        return in_array($this->path, $this->buildRouteVariants(''), true);
+    }
 
-        if ($this->basePath === '') {
-            $allowedPaths[] = '/';
-            $allowedPaths[] = '/index.php';
-        } else {
-            $allowedPaths[] = $this->basePath;
-            $allowedPaths[] = $this->basePath . '/';
-            $allowedPaths[] = $this->scriptName;
+    /**
+     * Prüft, ob die Anfrage auf eine Route relativ zum Service-Basisordner zeigt.
+     *
+     * Beispiel:
+     * - Basis-Pfad: /health
+     * - Relativer Pfad: phpinfo
+     * - Treffer: /health/phpinfo oder /health/phpinfo/
+     *
+     * @param string $relativePath Relativer Pfad innerhalb des Service-Ordners.
+     */
+    public function matchesRelativeRoute(string $relativePath): bool
+    {
+        return in_array($this->path, $this->buildRouteVariants($relativePath), true);
+    }
+
+    /**
+     * Erzeugt zulässige Pfadvarianten für die Basisroute oder eine Unterroute.
+     *
+     * @param string $relativePath Relativer Pfad innerhalb des Service-Ordners.
+     *
+     * @return array<int, string>
+     */
+    private function buildRouteVariants(string $relativePath): array
+    {
+        $normalizedRelativePath = trim($relativePath, '/');
+        $routePath = $this->basePath;
+
+        if ($normalizedRelativePath !== '') {
+            $routePath .= '/' . $normalizedRelativePath;
         }
 
-        return in_array($this->path, array_map([$this, 'normalizePath'], $allowedPaths), true);
+        $routePath = $this->normalizePath($routePath === '' ? '/' : $routePath);
+        $variants = [$routePath];
+
+        if ($routePath !== '/') {
+            $variants[] = $this->normalizePath($routePath . '/');
+        }
+
+        if ($normalizedRelativePath === '') {
+            if ($this->basePath === '') {
+                $variants[] = '/index.php';
+            } else {
+                $variants[] = $this->scriptName;
+            }
+        }
+
+        return array_values(array_unique(array_map([$this, 'normalizePath'], $variants)));
     }
 
     /**
