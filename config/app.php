@@ -3,17 +3,12 @@
 declare(strict_types=1);
 
 /**
- * Zentrale Projektkonfiguration.
+ * Zentrale Projektkonfiguration für den Health-Service.
  *
- * Diese Datei gibt bewusst nur ein einfaches Array zurück,
- * damit der Service ohne zusätzliche Bibliotheken lauffähig bleibt.
+ * Die Datei bleibt bewusst klein und einfach, damit der Service
+ * auf einfachem Webhosting leicht verständlich und gut pflegbar bleibt.
  *
- * Sicherheits-Hinweis:
- * Der phpinfo()-Endpunkt zeigt viele Details über deine PHP-Umgebung.
- * Für produktive öffentliche Systeme solltest du gut überlegen,
- * ob der Endpunkt dauerhaft aktiviert sein soll.
- *
- * @return array<string, array<string, bool|string>>
+ * @return array<string, array<string, mixed>>
  */
 return [
     'app' => [
@@ -26,5 +21,9 @@ return [
         // Relativer Endpunkt innerhalb des Service-Ordners.
         // Beispiel: api.sasd.de/health/phpinfo
         'phpinfo_route' => 'phpinfo',
+
+        // Relativer Endpunkt für die reine Zeit-/Datums-Ausgabe als JSON.
+        // Beispiel: api.sasd.de/health/time
+        'time_route' => 'time',
     ],
 ];
