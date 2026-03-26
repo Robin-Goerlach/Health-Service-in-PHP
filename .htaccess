@@ -1,17 +1,8 @@
-Options -Indexes
+Options -Indexes -MultiViews
 DirectoryIndex index.php
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
-
-    # Interne Verzeichnisse sollen nicht direkt aufrufbar sein.
-    RewriteRule ^(config|src)(/|$) - [F,L]
-
-    # Reale Dateien und Verzeichnisse werden direkt bedient.
-    RewriteCond %{REQUEST_FILENAME} -f [OR]
-    RewriteCond %{REQUEST_FILENAME} -d
-    RewriteRule ^ - [L]
-
-    # Alles andere wird an index.php weitergereicht.
-    RewriteRule ^phpinfo$ index.php [L,QSA]
+    RewriteBase /health2/
+    RewriteRule ^phpinfo$ probe.php [L]
 </IfModule>
